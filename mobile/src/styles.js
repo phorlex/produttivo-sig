@@ -17,9 +17,6 @@ export const styles = StyleSheet.create({
   darkButtonText: { color: "#fff", fontWeight: "800" },
   error: { backgroundColor: "#fee2e2", color: "#991b1b", padding: 10, borderRadius: 6, marginBottom: 10 },
   success: { backgroundColor: "#dcfce7", color: "#166534", padding: 10, borderRadius: 6, marginBottom: 10 },
-  apiBar: { backgroundColor: "#fff", borderRadius: 6, borderWidth: 1, borderColor: "#e4e4e7", padding: 10, marginBottom: 12 },
-  apiUrl: { color: "#52525b", fontSize: 12, marginBottom: 6 },
-  apiAction: { color: "#111", fontWeight: "800" },
   option: { borderWidth: 1, borderColor: "#d4d4d8", borderRadius: 6, padding: 10, marginTop: 8 },
   optionActive: { borderColor: "#111", backgroundColor: "#fef3c7" }
 });

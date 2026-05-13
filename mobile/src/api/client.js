@@ -1,21 +1,11 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const API_URL_STORAGE_KEY = "sig_api_url";
-const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000";
+const DEFAULT_API_URL = "https://web-production-b0b5b.up.railway.app";
 
 function normalizeApiUrl(url) {
   return url.trim().replace(/\/+$/, "");
 }
 
 export async function getApiUrl() {
-  const storedUrl = await AsyncStorage.getItem(API_URL_STORAGE_KEY);
-  return normalizeApiUrl(storedUrl || DEFAULT_API_URL);
-}
-
-export async function saveApiUrl(url) {
-  const nextUrl = normalizeApiUrl(url);
-  await AsyncStorage.setItem(API_URL_STORAGE_KEY, nextUrl);
-  return nextUrl;
+  return normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL);
 }
 
 export async function api(path, token, options = {}) {
