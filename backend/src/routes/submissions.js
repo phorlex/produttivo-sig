@@ -113,6 +113,7 @@ router.post("/:id/signatures", async (req, res) => {
   const base64 = image_base64.replace(/^data:image\/png;base64,/, "");
   const fileName = `signature-${Date.now()}.png`;
   const filePath = path.join(__dirname, "../../uploads/photos", fileName);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, base64, "base64");
   const id = randomUUID();
   await query(

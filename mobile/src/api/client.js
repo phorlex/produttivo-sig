@@ -57,3 +57,23 @@ export async function uploadPhoto(submissionId, questionId, uri, token, location
   if (!response.ok) throw new Error(readApiError(data, "Falha ao enviar foto"));
   return data;
 }
+
+export async function uploadSignature(submissionId, answerId, imageBase64, token) {
+  const apiUrl = await getApiUrl();
+  const response = await fetch(`${apiUrl}/submissions/${submissionId}/signatures`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      answer_id: answerId,
+      signer_name: "Assinatura no telefone",
+      signer_role: "Responsavel",
+      image_base64: imageBase64
+    })
+  });
+  const data = await readResponseData(response);
+  if (!response.ok) throw new Error(readApiError(data, "Falha ao salvar assinatura"));
+  return data;
+}

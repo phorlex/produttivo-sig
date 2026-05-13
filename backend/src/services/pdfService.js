@@ -7,6 +7,7 @@ const { getSubmission } = require("./checklistService");
 
 function formatValue(value) {
   if (value === null || value === undefined) return "-";
+  if (value === "assinatura_coletada") return "Assinatura coletada no telefone";
   if (typeof value === "object") return Array.isArray(value) ? value.join(", ") : JSON.stringify(value);
   return String(value);
 }
@@ -66,7 +67,15 @@ async function generatePdf(submissionId, userId) {
         }
       }
       const signatures = submission.signatures.filter((item) => item.answer_id === answer?.id);
-      for (const signature of signatures) doc.text(`Assinatura: ${signature.signer_name} (${signature.signer_role || "-"})`);
+      for (const signature of signatures) {
+        doc.text(`Assinatura: ${signature.signer_name} (${signature.signer_role || "-"})`);
+        const localPath = path.join(__dirname, "../../", signature.image_path);
+        if (fs.existsSync(localPath)) {
+          try {
+            doc.image(localPath, { fit: [220, 90] });
+          } catch {}
+        }
+      }
       doc.moveDown(0.8);
       if (doc.y > 720) doc.addPage();
     }

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { api, uploadPhoto } from "../api/client";
+import { WebView } from "react-native-webview";
+import { api, uploadPhoto, uploadSignature } from "../api/client";
 import { styles } from "../styles";
 
 export function FillScreen({ token, context, onBack }) {
@@ -30,23 +31,49 @@ export function FillScreen({ token, context, onBack }) {
   }
 
   async function takePhoto(questionId) {
-    await ImagePicker.requestCameraPermissionsAsync();
-    const picked = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) return setError("Permissao da camera nao liberada");
+    const picked = await ImagePicker.launchCameraAsync({ quality: 0.7, allowsEditing: false });
     if (picked.canceled) return;
+    const uri = picked.assets[0].uri;
+    setPhotos((current) => ({ ...current, [questionId]: [...(current[questionId] || []), uri] }));
     let location = null;
     try {
       await Location.requestForegroundPermissionsAsync();
       location = await Location.getCurrentPositionAsync({});
     } catch {}
-    await uploadPhoto(submission.id, questionId, picked.assets[0].uri, token, location);
-    setPhotos({ ...photos, [questionId]: [...(photos[questionId] || []), picked.assets[0].uri] });
+    try {
+      await uploadPhoto(submission.id, questionId, uri, token, location);
+      setError("");
+    } catch (err) {
+      setPhotos((current) => ({ ...current, [questionId]: (current[questionId] || []).filter((item) => item !== uri) }));
+      setError(err.message);
+    }
   }
 
-  async function save(status = "draft") {
-    await api(`/submissions/${submission.id}/answers`, token, {
+  async function save(status = "draft", nextAnswers = answers) {
+    const saved = await api(`/submissions/${submission.id}/answers`, token, {
       method: "PUT",
-      body: JSON.stringify({ status, answers: Object.values(answers) })
+      body: JSON.stringify({ status, answers: Object.values(nextAnswers) })
     });
+    setSubmission(saved);
+    return saved;
+  }
+
+  async function saveDrawnSignature(questionId, imageBase64) {
+    const nextAnswers = {
+      ...answers,
+      [questionId]: { question_id: questionId, value: "assinatura_coletada", observation: answers[questionId]?.observation }
+    };
+    setAnswers(nextAnswers);
+    try {
+      const savedSubmission = await save("draft", nextAnswers);
+      const savedAnswer = (savedSubmission.answers || []).find((item) => item.question_id === questionId);
+      await uploadSignature(submission.id, savedAnswer?.id, imageBase64, token);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function validateLocal() {
@@ -87,7 +114,15 @@ export function FillScreen({ token, context, onBack }) {
         <View key={category.id} style={styles.card}>
           <Text style={{ fontSize: 18, fontWeight: "900" }}>{category.title}</Text>
           {category.questions.map((question) => (
-            <Question key={question.id} question={question} answer={answers[question.id]} setAnswer={setAnswer} takePhoto={takePhoto} photos={photos[question.id] || []} />
+            <Question
+              key={question.id}
+              question={question}
+              answer={answers[question.id]}
+              setAnswer={setAnswer}
+              takePhoto={takePhoto}
+              photos={photos[question.id] || []}
+              saveSignature={saveDrawnSignature}
+            />
           ))}
         </View>
       ))}
@@ -97,15 +132,17 @@ export function FillScreen({ token, context, onBack }) {
   );
 }
 
-function Question({ question, answer, setAnswer, takePhoto, photos }) {
+function Question({ question, answer, setAnswer, takePhoto, photos, saveSignature }) {
   const options = question.options?.length ? question.options : defaultOptions(question.response_type);
-  const textLike = ["texto_curto", "texto_longo", "numero", "data", "hora", "data_hora", "assinatura", "upload_arquivo"].includes(question.response_type);
+  const textLike = ["texto_curto", "texto_longo", "numero", "data", "hora", "data_hora", "upload_arquivo"].includes(question.response_type);
   const mustJustifyWithPhoto = requiresPhotoJustification(answer, question);
   return (
     <View style={{ marginTop: 14 }}>
       <Text style={{ fontWeight: "800" }}>{question.title}{question.required ? " *" : ""}</Text>
       {!!question.description && <Text>{question.description}</Text>}
-      {question.response_type === "informativo" ? null : textLike ? (
+      {question.response_type === "informativo" ? null : question.response_type === "assinatura" ? (
+        <SignaturePad value={answer?.value} onSave={(imageBase64) => saveSignature(question.id, imageBase64)} />
+      ) : textLike ? (
         <TextInput style={styles.input} value={String(answer?.value || "")} onChangeText={(value) => setAnswer(question.id, value)} multiline={question.response_type === "texto_longo"} />
       ) : (
         options.map((option) => (
@@ -117,6 +154,131 @@ function Question({ question, answer, setAnswer, takePhoto, photos }) {
       {question.allows_observation && <TextInput placeholder="Observacao" style={styles.input} value={answer?.observation || ""} onChangeText={(value) => setAnswer(question.id, answer?.value || "", value)} />}
       {(mustJustifyWithPhoto || question.requires_photo || question.response_type === "foto" || question.response_type === "multiplas_fotos") && <TouchableOpacity style={styles.darkButton} onPress={() => takePhoto(question.id)}><Text style={styles.darkButtonText}>{mustJustifyWithPhoto ? "Tirar foto de justificativa" : "Tirar foto"}</Text></TouchableOpacity>}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>{photos.map((uri) => <Image key={uri} source={{ uri }} style={{ width: 80, height: 80, borderRadius: 6 }} />)}</View>
+    </View>
+  );
+}
+
+function SignaturePad({ value, onSave }) {
+  const [saved, setSaved] = useState(value === "assinatura_coletada");
+  const webViewRef = useRef(null);
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <style>
+          html, body { margin: 0; padding: 0; overflow: hidden; background: #fff; touch-action: none; }
+          canvas { width: 100vw; height: 190px; display: block; background: #fff; }
+        </style>
+      </head>
+      <body>
+        <canvas id="signature"></canvas>
+        <script>
+          const canvas = document.getElementById("signature");
+          const ctx = canvas.getContext("2d");
+          let drawing = false;
+          let hasInk = false;
+
+          function resize() {
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = Math.floor(window.innerWidth * ratio);
+            canvas.height = Math.floor(190 * ratio);
+            ctx.scale(ratio, ratio);
+            ctx.lineWidth = 3;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.strokeStyle = "#111111";
+          }
+
+          function point(event) {
+            const touch = event.touches ? event.touches[0] : event;
+            const rect = canvas.getBoundingClientRect();
+            return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+          }
+
+          function start(event) {
+            event.preventDefault();
+            drawing = true;
+            const current = point(event);
+            ctx.beginPath();
+            ctx.moveTo(current.x, current.y);
+          }
+
+          function move(event) {
+            if (!drawing) return;
+            event.preventDefault();
+            const current = point(event);
+            ctx.lineTo(current.x, current.y);
+            ctx.stroke();
+            hasInk = true;
+          }
+
+          function end(event) {
+            event.preventDefault();
+            drawing = false;
+          }
+
+          window.clearSignature = function () {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasInk = false;
+          };
+
+          window.saveSignature = function () {
+            if (!hasInk) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: "empty" }));
+              return;
+            }
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: "signature", image: canvas.toDataURL("image/png") }));
+          };
+
+          resize();
+          canvas.addEventListener("touchstart", start, { passive: false });
+          canvas.addEventListener("touchmove", move, { passive: false });
+          canvas.addEventListener("touchend", end, { passive: false });
+          canvas.addEventListener("mousedown", start);
+          canvas.addEventListener("mousemove", move);
+          canvas.addEventListener("mouseup", end);
+        </script>
+      </body>
+    </html>
+  `;
+
+  return (
+    <View>
+      <View style={styles.signatureBox}>
+        <WebView
+          ref={webViewRef}
+          originWhitelist={["*"]}
+          source={{ html }}
+          javaScriptEnabled
+          scrollEnabled={false}
+          onMessage={(event) => {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === "signature") {
+              setSaved(true);
+              onSave(data.image);
+            }
+            if (data.type === "empty") setSaved(false);
+          }}
+        />
+      </View>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <TouchableOpacity
+          style={[styles.darkButton, { flex: 1 }]}
+          onPress={() => {
+            setSaved(false);
+            webViewRef.current?.injectJavaScript("window.clearSignature(); true;");
+          }}
+        >
+          <Text style={styles.darkButtonText}>Limpar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.button, { flex: 1 }]}
+          onPress={() => webViewRef.current?.injectJavaScript("window.saveSignature(); true;")}
+        >
+          <Text style={styles.buttonText}>{saved ? "Assinada" : "Salvar assinatura"}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

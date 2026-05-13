@@ -18,5 +18,6 @@ export const styles = StyleSheet.create({
   error: { backgroundColor: "#fee2e2", color: "#991b1b", padding: 10, borderRadius: 6, marginBottom: 10 },
   success: { backgroundColor: "#dcfce7", color: "#166534", padding: 10, borderRadius: 6, marginBottom: 10 },
   option: { borderWidth: 1, borderColor: "#d4d4d8", borderRadius: 6, padding: 10, marginTop: 8 },
-  optionActive: { borderColor: "#111", backgroundColor: "#fef3c7" }
+  optionActive: { borderColor: "#111", backgroundColor: "#fef3c7" },
+  signatureBox: { height: 190, overflow: "hidden", borderWidth: 1, borderColor: "#d4d4d8", borderRadius: 6, marginTop: 8, backgroundColor: "#fff" }
 });
