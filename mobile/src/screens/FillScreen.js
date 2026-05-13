@@ -3,7 +3,7 @@ import { Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "reac
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
-import { api, uploadPhoto, uploadSignature } from "../api/client";
+import { api, getApiUrl, uploadPhoto, uploadSignature } from "../api/client";
 import { styles } from "../styles";
 
 export function FillScreen({ token, context, onBack }) {
@@ -12,9 +12,24 @@ export function FillScreen({ token, context, onBack }) {
   const [answers, setAnswers] = useState({});
   const [photos, setPhotos] = useState({});
   const [error, setError] = useState("");
+  const readOnly = context.mode === "view";
 
   useEffect(() => {
     async function boot() {
+      if (context.submissionId) {
+        const loaded = await api(`/submissions/${context.submissionId}`, token);
+        const apiUrl = await getApiUrl();
+        setTemplate(loaded.template);
+        setSubmission(loaded);
+        setAnswers(Object.fromEntries((loaded.answers || []).map((answer) => [answer.question_id, {
+          question_id: answer.question_id,
+          value: normalizeAnswerValue(answer.value),
+          observation: answer.observation || ""
+        }])));
+        setPhotos(groupPhotosByQuestion(loaded.attachments || [], apiUrl));
+        return;
+      }
+
       const loadedTemplate = await api(`/checklists/${context.templateId}`, token);
       const created = await api("/submissions", token, {
         method: "POST",
@@ -24,13 +39,15 @@ export function FillScreen({ token, context, onBack }) {
       setSubmission(created);
     }
     boot().catch((err) => setError(err.message));
-  }, [context.templateId, context.vehicleId, token]);
+  }, [context.submissionId, context.templateId, context.vehicleId, token]);
 
   function setAnswer(questionId, value, observation) {
+    if (readOnly) return;
     setAnswers({ ...answers, [questionId]: { question_id: questionId, value, observation: observation ?? answers[questionId]?.observation } });
   }
 
   async function takePhoto(questionId) {
+    if (readOnly) return;
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) return setError("Permissao da camera nao liberada");
     const picked = await ImagePicker.launchCameraAsync({ quality: 0.7, allowsEditing: false });
@@ -51,7 +68,8 @@ export function FillScreen({ token, context, onBack }) {
     }
   }
 
-  async function save(status = "draft", nextAnswers = answers) {
+  async function save(status = submission.status || "draft", nextAnswers = answers) {
+    if (readOnly) return submission;
     const saved = await api(`/submissions/${submission.id}/answers`, token, {
       method: "PUT",
       body: JSON.stringify({ status, answers: Object.values(nextAnswers) })
@@ -61,13 +79,14 @@ export function FillScreen({ token, context, onBack }) {
   }
 
   async function saveDrawnSignature(questionId, imageBase64) {
+    if (readOnly) return;
     const nextAnswers = {
       ...answers,
       [questionId]: { question_id: questionId, value: "assinatura_coletada", observation: answers[questionId]?.observation }
     };
     setAnswers(nextAnswers);
     try {
-      const savedSubmission = await save("draft", nextAnswers);
+      const savedSubmission = await save(submission.status || "draft", nextAnswers);
       const savedAnswer = (savedSubmission.answers || []).find((item) => item.question_id === questionId);
       await uploadSignature(submission.id, savedAnswer?.id, imageBase64, token);
       setError("");
@@ -91,6 +110,7 @@ export function FillScreen({ token, context, onBack }) {
   }
 
   async function finalize() {
+    if (readOnly) return;
     const errors = validateLocal();
     if (errors.length) return setError(errors.join("\n"));
     try {
@@ -103,62 +123,110 @@ export function FillScreen({ token, context, onBack }) {
   }
 
   if (!template || !submission) return <View style={styles.container}><Text>Carregando checklist...</Text></View>;
+  const allQuestions = template.categories.flatMap((category) => category.questions || []);
+  const totalQuestions = allQuestions.filter((question) => question.response_type !== "informativo").length;
+  const answeredQuestions = allQuestions.filter((question) => {
+    if (question.response_type === "informativo") return false;
+    if (question.response_type === "foto" || question.response_type === "multiplas_fotos") return (photos[question.id] || []).length > 0;
+    return !!answers[question.id]?.value;
+  }).length;
 
   return (
-    <ScrollView style={styles.container}>
-      <TouchableOpacity onPress={onBack}><Text style={styles.link}>Voltar</Text></TouchableOpacity>
-      <Text style={styles.title}>{template.name}</Text>
-      {!!context.vehicle && <Text>{context.vehicle.plate} - {context.vehicle.brand} {context.vehicle.model}</Text>}
+    <ScrollView style={styles.container} contentContainerStyle={styles.fillContent}>
+      <View style={styles.fillHeader}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}><Text style={styles.backButtonText}>Voltar</Text></TouchableOpacity>
+        <Text style={styles.fillTitle}>{template.name}</Text>
+        {!!context.vehicle && <Text style={styles.vehicleText}>{context.vehicle.plate} - {context.vehicle.brand} {context.vehicle.model}</Text>}
+        {!!submission.report_number && <Text style={styles.progressText}>{submission.report_number} - {readOnly ? "Visualizacao" : "Edicao"}</Text>}
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${totalQuestions ? (answeredQuestions / totalQuestions) * 100 : 0}%` }]} />
+        </View>
+        <Text style={styles.progressText}>{answeredQuestions} de {totalQuestions} perguntas respondidas</Text>
+      </View>
       {!!error && <Text style={styles.error}>{error}</Text>}
-      {template.categories.map((category) => (
-        <View key={category.id} style={styles.card}>
-          <Text style={{ fontSize: 18, fontWeight: "900" }}>{category.title}</Text>
-          {category.questions.map((question) => (
+      {template.categories.map((category, categoryIndex) => (
+        <View key={category.id} style={styles.categorySection}>
+          <View style={styles.categoryHeader}>
+            <Text style={styles.categoryNumber}>{String(categoryIndex + 1).padStart(2, "0")}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.categoryTitle}>{category.title}</Text>
+              {!!category.description && <Text style={styles.categoryDescription}>{category.description}</Text>}
+            </View>
+          </View>
+          {category.questions.map((question, questionIndex) => (
             <Question
               key={question.id}
               question={question}
+              index={questionIndex + 1}
               answer={answers[question.id]}
               setAnswer={setAnswer}
               takePhoto={takePhoto}
               photos={photos[question.id] || []}
               saveSignature={saveDrawnSignature}
+              readOnly={readOnly}
             />
           ))}
         </View>
       ))}
-      <TouchableOpacity style={styles.darkButton} onPress={() => save("draft")}><Text style={styles.darkButtonText}>Salvar rascunho</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.button} onPress={finalize}><Text style={styles.buttonText}>Finalizar checklist</Text></TouchableOpacity>
+      {!readOnly && (
+        <>
+          <TouchableOpacity style={styles.darkButton} onPress={() => save(submission.status || "draft")}><Text style={styles.darkButtonText}>Salvar alteracoes</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={finalize}><Text style={styles.buttonText}>Finalizar checklist</Text></TouchableOpacity>
+        </>
+      )}
     </ScrollView>
   );
 }
 
-function Question({ question, answer, setAnswer, takePhoto, photos, saveSignature }) {
-  const options = question.options?.length ? question.options : defaultOptions(question.response_type);
+function Question({ question, index, answer, setAnswer, takePhoto, photos, saveSignature, readOnly }) {
+  const options = question.options || [];
   const textLike = ["texto_curto", "texto_longo", "numero", "data", "hora", "data_hora", "upload_arquivo"].includes(question.response_type);
   const mustJustifyWithPhoto = requiresPhotoJustification(answer, question);
+  const expectsPhoto = mustJustifyWithPhoto || question.requires_photo || question.response_type === "foto" || question.response_type === "multiplas_fotos";
+  const isAnswered = question.response_type === "informativo" || !!answer?.value || photos.length > 0;
   return (
-    <View style={{ marginTop: 14 }}>
-      <Text style={{ fontWeight: "800" }}>{question.title}{question.required ? " *" : ""}</Text>
-      {!!question.description && <Text>{question.description}</Text>}
+    <View style={[styles.questionCard, isAnswered && styles.questionCardDone]}>
+      <View style={styles.questionTopline}>
+        <Text style={styles.questionIndex}>{String(index).padStart(2, "0")}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.questionTitle}>{question.title}</Text>
+          {!!question.description && <Text style={styles.questionDescription}>{question.description}</Text>}
+        </View>
+        <Text style={[styles.statusPill, isAnswered ? styles.statusDone : styles.statusPending]}>{isAnswered ? "Ok" : "Pendente"}</Text>
+      </View>
+      <View style={styles.badgeRow}>
+        {question.required && <Text style={styles.metaBadge}>Obrigatoria</Text>}
+        {expectsPhoto && <Text style={styles.metaBadge}>Foto</Text>}
+        {question.response_type === "assinatura" && <Text style={styles.metaBadge}>Assinatura</Text>}
+        {question.observation_required && <Text style={styles.metaBadge}>Observacao</Text>}
+      </View>
       {question.response_type === "informativo" ? null : question.response_type === "assinatura" ? (
-        <SignaturePad value={answer?.value} onSave={(imageBase64) => saveSignature(question.id, imageBase64)} />
+        <SignaturePad value={answer?.value} onSave={(imageBase64) => saveSignature(question.id, imageBase64)} readOnly={readOnly} />
       ) : textLike ? (
-        <TextInput style={styles.input} value={String(answer?.value || "")} onChangeText={(value) => setAnswer(question.id, value)} multiline={question.response_type === "texto_longo"} />
+        <TextInput editable={!readOnly} style={styles.input} value={String(answer?.value || "")} onChangeText={(value) => setAnswer(question.id, value)} multiline={question.response_type === "texto_longo"} placeholder="Resposta" />
+      ) : options.length ? (
+        <View style={styles.optionGroup}>
+          {options.map((option) => (
+            <TouchableOpacity key={option.value} disabled={readOnly} style={[styles.option, answer?.value === option.value && styles.optionActive]} onPress={() => setAnswer(question.id, option.value)}>
+              <Text style={[styles.optionText, answer?.value === option.value && styles.optionTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       ) : (
-        options.map((option) => (
-          <TouchableOpacity key={option.value} style={[styles.option, answer?.value === option.value && styles.optionActive]} onPress={() => setAnswer(question.id, option.value)}>
-            <Text>{option.label}</Text>
-          </TouchableOpacity>
-        ))
+        <Text style={styles.emptyState}>Sem respostas configuradas para esta pergunta.</Text>
       )}
-      {question.allows_observation && <TextInput placeholder="Observacao" style={styles.input} value={answer?.observation || ""} onChangeText={(value) => setAnswer(question.id, answer?.value || "", value)} />}
-      {(mustJustifyWithPhoto || question.requires_photo || question.response_type === "foto" || question.response_type === "multiplas_fotos") && <TouchableOpacity style={styles.darkButton} onPress={() => takePhoto(question.id)}><Text style={styles.darkButtonText}>{mustJustifyWithPhoto ? "Tirar foto de justificativa" : "Tirar foto"}</Text></TouchableOpacity>}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>{photos.map((uri) => <Image key={uri} source={{ uri }} style={{ width: 80, height: 80, borderRadius: 6 }} />)}</View>
+      {question.allows_observation && <TextInput editable={!readOnly} placeholder="Observacao" style={styles.input} value={answer?.observation || ""} onChangeText={(value) => setAnswer(question.id, answer?.value || "", value)} multiline />}
+      {expectsPhoto && !readOnly && <TouchableOpacity style={styles.darkButton} onPress={() => takePhoto(question.id)}><Text style={styles.darkButtonText}>{mustJustifyWithPhoto ? "Tirar foto de justificativa" : photos.length ? "Adicionar outra foto" : "Tirar foto"}</Text></TouchableOpacity>}
+      {!!photos.length && (
+        <View style={styles.photoStrip}>
+          {photos.map((uri) => <Image key={uri} source={{ uri }} style={styles.photoPreview} />)}
+        </View>
+      )}
     </View>
   );
 }
 
-function SignaturePad({ value, onSave }) {
+function SignaturePad({ value, onSave, readOnly }) {
   const [saved, setSaved] = useState(value === "assinatura_coletada");
   const webViewRef = useRef(null);
   const html = `
@@ -264,6 +332,7 @@ function SignaturePad({ value, onSave }) {
       </View>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <TouchableOpacity
+          disabled={readOnly}
           style={[styles.darkButton, { flex: 1 }]}
           onPress={() => {
             setSaved(false);
@@ -273,6 +342,7 @@ function SignaturePad({ value, onSave }) {
           <Text style={styles.darkButtonText}>Limpar</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          disabled={readOnly}
           style={[styles.button, { flex: 1 }]}
           onPress={() => webViewRef.current?.injectJavaScript("window.saveSignature(); true;")}
         >
@@ -289,16 +359,28 @@ function normalizeAnswerText(value) {
   return raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+function normalizeAnswerValue(value) {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function groupPhotosByQuestion(attachments, apiUrl) {
+  return attachments
+    .filter((item) => item.kind === "photo" && item.question_id)
+    .reduce((groups, item) => {
+      const uri = `${apiUrl}/${String(item.file_path || "").replace(/^\/+/, "")}`;
+      return { ...groups, [item.question_id]: [...(groups[item.question_id] || []), uri] };
+    }, {});
+}
+
 function requiresPhotoJustification(answer, question) {
   const answerText = normalizeAnswerText(answer?.value);
   const option = (question.options || []).find((item) => normalizeAnswerText(item.value) === answerText);
   const optionText = normalizeAnswerText(`${option?.value || ""} ${option?.label || ""}`);
   const combined = `${answerText} ${optionText}`.trim();
   return combined === "nao" || combined.includes("nao conforme") || combined.includes("nao_conforme");
-}
-
-function defaultOptions(type) {
-  if (type === "sim_nao") return [{ label: "Sim", value: "sim" }, { label: "Nao", value: "nao" }];
-  if (type === "checklist_simples") return [{ label: "Marcado", value: "marcado" }];
-  return [{ label: "Conforme", value: "conforme" }, { label: "Nao conforme", value: "nao_conforme" }, { label: "N/A", value: "na" }];
 }

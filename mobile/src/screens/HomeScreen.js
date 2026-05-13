@@ -4,6 +4,11 @@ import { api } from "../api/client";
 import { styles } from "../styles";
 
 const emptyVehicle = { plate: "", brand: "", model: "", year: "" };
+const statusLabels = {
+  draft: "Rascunho",
+  pending: "Pendente",
+  finished: "Finalizado"
+};
 
 export function HomeScreen({ token, onStart }) {
   const [templates, setTemplates] = useState([]);
@@ -12,6 +17,7 @@ export function HomeScreen({ token, onStart }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [submissionFilter, setSubmissionFilter] = useState("all");
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [vehicleForm, setVehicleForm] = useState(emptyVehicle);
@@ -59,6 +65,20 @@ export function HomeScreen({ token, onStart }) {
     onStart({ templateId: template.id, vehicleId: vehicle.id, vehicle });
   }
 
+  function openSubmission(item, mode) {
+    onStart({
+      submissionId: item.id,
+      templateId: item.template_id,
+      vehicleId: item.vehicle_id,
+      mode,
+      vehicle: {
+        plate: item.plate || "",
+        brand: item.brand || "",
+        model: item.model || ""
+      }
+    });
+  }
+
   async function startWithNewVehicle() {
     if (!selectedTemplate) return;
     const plate = vehicleForm.plate.trim().toUpperCase();
@@ -104,6 +124,10 @@ export function HomeScreen({ token, onStart }) {
       setSavingVehicle(false);
     }
   }
+
+  const visibleSubmissions = submissionFilter === "finished"
+    ? submissions.filter((item) => item.status === "finished")
+    : submissions;
 
   return (
     <ScrollView style={styles.container}>
@@ -185,12 +209,34 @@ export function HomeScreen({ token, onStart }) {
         </View>
       )}
       <Text style={styles.label}>Meus rascunhos, pendentes e finalizados</Text>
-      {submissions.map((item) => (
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+        <TouchableOpacity style={[styles.option, submissionFilter === "all" && styles.optionActive, { flex: 1 }]} onPress={() => setSubmissionFilter("all")}>
+          <Text style={[styles.optionText, submissionFilter === "all" && styles.optionTextActive]}>Todos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.option, submissionFilter === "finished" && styles.optionActive, { flex: 1 }]} onPress={() => setSubmissionFilter("finished")}>
+          <Text style={[styles.optionText, submissionFilter === "finished" && styles.optionTextActive]}>Finalizados</Text>
+        </TouchableOpacity>
+      </View>
+      {visibleSubmissions.map((item) => (
         <View key={item.id} style={styles.card}>
           <Text style={{ fontWeight: "800" }}>{item.checklist_name}</Text>
-          <Text>{item.plate || "Sem veiculo"} - {item.status}</Text>
+          <Text>{item.plate || "Sem veiculo"} - {statusLabels[item.status] || item.status}</Text>
+          {!!item.report_number && <Text style={{ color: "#52525b", marginTop: 4 }}>{item.report_number}</Text>}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            <TouchableOpacity style={[styles.darkButton, { flex: 1 }]} onPress={() => openSubmission(item, "view")}>
+              <Text style={styles.darkButtonText}>Visualizar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={() => openSubmission(item, "edit")}>
+              <Text style={styles.buttonText}>Editar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ))}
+      {!loading && !visibleSubmissions.length && (
+        <View style={styles.card}>
+          <Text>Nenhum checklist encontrado neste filtro.</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }

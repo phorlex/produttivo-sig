@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Shell } from "../../components/Shell";
 import { api } from "../../lib/api";
 
@@ -45,10 +46,25 @@ export default function DashboardPage() {
       </section>
       <section className="mt-6 rounded-lg border bg-white p-5">
         <h2 className="mb-3 font-bold">Relatorios filtrados</h2>
-        {rows.map((item) => <div key={item.id} className="grid grid-cols-4 gap-3 border-b py-2 text-sm"><span>{item.report_number}</span><span>{item.checklist_name}</span><span>{item.plate || "Sem veiculo"}</span><strong>{item.status}</strong></div>)}
+        {rows.map((item) => (
+          <div key={item.id} className="grid gap-3 border-b py-3 text-sm md:grid-cols-[1fr_1.4fr_1fr_110px_180px] md:items-center">
+            <span>{item.report_number}</span>
+            <span>{item.checklist_name}</span>
+            <span>{item.plate || "Sem veiculo"}</span>
+            <strong>{statusLabel(item.status)}</strong>
+            <div className="flex gap-2">
+              <Link className="rounded-md border bg-white px-3 py-2 font-semibold" href={`/submissions/${item.id}?mode=view`}>Visualizar</Link>
+              <Link className="rounded-md bg-sig-yellow px-3 py-2 font-semibold text-sig-black" href={`/submissions/${item.id}?mode=edit`}>Editar</Link>
+            </div>
+          </div>
+        ))}
       </section>
     </Shell>
   );
+}
+
+function statusLabel(status) {
+  return { draft: "Rascunho", pending: "Pendente", finished: "Finalizado" }[status] || status;
 }
 
 function Panel({ title, rows }) {

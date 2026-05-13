@@ -6,23 +6,19 @@ import shared from "@sig-checklist/shared";
 import { Shell } from "../../components/Shell";
 import { api } from "../../lib/api";
 
-const { RESPONSE_TYPES } = shared;
+const { RESPONSE_TYPES, RESPONSE_OPTION_PRESETS } = shared;
 
 const blankQuestion = {
   title: "Nova pergunta",
   description: "",
-  response_type: "conformidade",
+  response_type: "selecao_unica",
   required: false,
   requires_photo: false,
   min_photos: 0,
   max_photos: "",
   allows_observation: true,
   observation_required: false,
-  options: [
-    { label: "Conforme", value: "conforme" },
-    { label: "Nao conforme", value: "nao_conforme" },
-    { label: "N/A", value: "na" }
-  ],
+  options: [],
   condition: {},
   config: {}
 };
@@ -338,7 +334,7 @@ function QuestionModal({ initialQuestion, onClose, onSave }) {
                 </div>
               </div>
 
-              <OptionsEditor options={question.options || []} updateOption={updateOption} onChange={(patch) => setQuestion({ ...question, ...patch })} />
+              <OptionsEditor question={question} updateOption={updateOption} onChange={(patch) => setQuestion({ ...question, ...patch })} />
             </div>
 
             <div className="space-y-3">
@@ -372,16 +368,45 @@ function QuestionModal({ initialQuestion, onClose, onSave }) {
   );
 }
 
-function OptionsEditor({ options, updateOption, onChange }) {
+function sameOptions(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  return left.every((option, index) => option.label === right[index]?.label && option.value === right[index]?.value);
+}
+
+function OptionsEditor({ question, updateOption, onChange }) {
+  const options = question.options || [];
+  const selectedPreset = RESPONSE_OPTION_PRESETS.find((preset) => sameOptions(options, preset.options))?.value || (options.length ? "personalizado" : "");
+
+  function applyPreset(value) {
+    if (!value) {
+      onChange({ options: [], config: { ...(question.config || {}), response_option_preset: "" } });
+      return;
+    }
+    const preset = RESPONSE_OPTION_PRESETS.find((item) => item.value === value);
+    if (!preset) return;
+    onChange({
+      options: preset.options.map((option) => ({ ...option })),
+      config: { ...(question.config || {}), response_option_preset: preset.value }
+    });
+  }
+
   return (
     <div className="rounded-md border bg-white p-3">
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ListChecks size={16} />
           <h3 className="font-bold">Opcoes de resposta</h3>
         </div>
         <button onClick={() => onChange({ options: [...options, { label: "Nova opcao", value: "nova_opcao" }] })} className="border px-3 py-2">Adicionar</button>
       </div>
+      <label className="mb-3 block">
+        <span className="text-sm font-semibold">Respostas predefinidas</span>
+        <select value={selectedPreset} onChange={(event) => applyPreset(event.target.value)}>
+          <option value="">Nenhuma</option>
+          {RESPONSE_OPTION_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+          {selectedPreset === "personalizado" && <option value="personalizado">Personalizado</option>}
+        </select>
+      </label>
       <div className="space-y-2">
         {options.map((option, index) => (
           <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_40px]">
