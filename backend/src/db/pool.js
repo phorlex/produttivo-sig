@@ -1,8 +1,7 @@
 const mysql = require("mysql2/promise");
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../../../.env") });
+const { getDatabaseUrl } = require("./config");
 
-const databaseUrl = process.env.DATABASE_URL || process.env.MYSQL_URL || "mysql://root:root@localhost:3306/sig_checklist";
+const databaseUrl = getDatabaseUrl();
 
 const pool = mysql.createPool({
   uri: databaseUrl,

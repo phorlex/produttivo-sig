@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+
+node_modules
+web/.next
+mobile/android/.gradle
+mobile/android/app/build
+dist
+*.log

@@ -102,10 +102,9 @@ O arquivo `railway.json` deixa o Railway pronto para instalar dependencias, roda
 ```env
 DATABASE_URL=mysql://usuario:senha@host:3306/banco
 JWT_SECRET=um-segredo-forte
-PORT=4000
 ```
 
-Se o MySQL do Railway fornecer `MYSQL_URL`, o backend tambem aceita essa variavel automaticamente. O Railway tambem injeta `PORT`; se ele criar essa variavel, mantenha a dele. Depois do deploy, teste:
+Se o MySQL do Railway fornecer `MYSQL_URL`, o backend tambem aceita essa variavel automaticamente. Nao crie `PORT` manualmente no Railway: a plataforma injeta essa variavel e o backend usa o valor dela. Depois do deploy, teste:
 
 ```text
 https://seu-backend.up.railway.app/health

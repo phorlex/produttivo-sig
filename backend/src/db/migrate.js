@@ -1,11 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
-require("dotenv").config({ path: path.join(__dirname, "../../../.env") });
+const { getDatabaseUrl } = require("./config");
 const { pool } = require("./pool");
 
 async function ensureDatabase() {
-  const databaseUrl = new URL(process.env.DATABASE_URL || process.env.MYSQL_URL || "mysql://root:root@localhost:3306/sig_checklist");
+  const databaseUrl = new URL(getDatabaseUrl());
   const database = databaseUrl.pathname.replace("/", "");
   const connection = await mysql.createConnection({
     host: databaseUrl.hostname,
