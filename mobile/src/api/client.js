@@ -8,6 +8,22 @@ export async function getApiUrl() {
   return normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL);
 }
 
+function readApiError(data, fallback) {
+  if (data?.errors?.length) return data.errors.join("\n");
+  return data?.message || fallback;
+}
+
+async function readResponseData(response) {
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return { message: text };
+  }
+}
+
 export async function api(path, token, options = {}) {
   const apiUrl = await getApiUrl();
   const response = await fetch(`${apiUrl}${path}`, {
@@ -18,9 +34,8 @@ export async function api(path, token, options = {}) {
       ...(options.headers || {})
     }
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(data?.errors?.join("\n") || data?.message || "Erro na API");
+  const data = await readResponseData(response);
+  if (!response.ok) throw new Error(readApiError(data, "Erro na API"));
   return data;
 }
 
@@ -38,6 +53,7 @@ export async function uploadPhoto(submissionId, questionId, uri, token, location
     headers: { Authorization: `Bearer ${token}` },
     body: form
   });
-  if (!response.ok) throw new Error("Falha ao enviar foto");
-  return response.json();
+  const data = await readResponseData(response);
+  if (!response.ok) throw new Error(readApiError(data, "Falha ao enviar foto"));
+  return data;
 }
