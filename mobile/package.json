@@ -1,0 +1,23 @@
+{
+  "name": "@sig-checklist/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build:apk": "npx --yes --package eas-cli@latest eas build --platform android --profile apk"
+  },
+  "dependencies": {
+    "@sig-checklist/shared": "1.0.0",
+    "@react-native-async-storage/async-storage": "^1.23.1",
+    "expo": "~51.0.20",
+    "expo-image-picker": "~15.0.7",
+    "expo-location": "~17.0.1",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.74.3"
+  }
+}

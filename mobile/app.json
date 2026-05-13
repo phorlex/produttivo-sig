@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "SIG Checklist Operacional",
+    "slug": "sig-checklist-operacional",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#111111" },
+    "ios": { "supportsTablet": true },
+    "android": {
+      "package": "com.sigmultimarcas.checklistoperacional",
+      "versionCode": 1,
+      "adaptiveIcon": { "backgroundColor": "#111111" }
+    },
+    "plugins": ["expo-image-picker", "expo-location"]
+  }
+}

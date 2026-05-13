@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #f5f5f2;
+  color: #111111;
+}
+
+input, select, textarea {
+  @apply w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-sig-yellow;
+}
+
+button {
+  @apply rounded-md text-sm font-semibold transition;
+}
